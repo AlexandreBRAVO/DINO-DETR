@@ -28,4 +28,8 @@ def build_dataset(image_set, args):
     if args.dataset_file == 'vanke':
         from .vanke import build_vanke
         return build_vanke(image_set, args)
+    if args.dataset_file == 'archi_irisa' :
+        from .coco_irisa import build as build_coco_irisa
+        return build_coco_irisa(image_set, args)
+        
     raise ValueError(f'dataset {args.dataset_file} not supported')
