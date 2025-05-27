@@ -6,6 +6,7 @@ Train and eval functions used in main.py
 import math
 import os
 import sys
+import json
 from typing import Iterable
 
 from util.utils import slprint, to_device
@@ -155,6 +156,7 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
 
     _cnt = 0
     output_state_dict = {} # for debug only
+    json_data = []
     for samples, targets in metric_logger.log_every(data_loader, 10, header, logger=logger):
         samples = samples.to(device)
 
@@ -244,6 +246,27 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
                     output_state_dict['res_info'] = []
                 output_state_dict['res_info'].append(res_info.cpu())
 
+                # Json data of detections
+                image_id = tgt.get('image_id', torch.tensor([i])).item()  # fallback si pas de image_id dans tgt
+
+                for j in range(res_info.shape[0]):
+                    bbox_xyxy = res_info[j, :4].tolist()  # [x1, y1, x2, y2]
+                    score = res_info[j, 4].item()
+                    category_id = int(res_info[j, 5].item())
+
+                    # Convertir en COCO format [x, y, w, h]
+                    x, y, x2, y2 = bbox_xyxy
+                    w = x2 - x
+                    h = y2 - y
+                    bbox_xywh = [x, y, w, h]
+
+                    detect_data = {
+                        "image_id": image_id,
+                        "category_id": category_id,
+                        "bbox": [float(v) for v in bbox_xywh],
+                        "score": float(score)
+                    }
+                    json_data.append(detect_data)
             # # for debug only
             # import random
             # if random.random() > 0.7:
@@ -265,6 +288,14 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
         print("Saving res to {}".format(savepath))
         torch.save(output_state_dict, savepath)
 
+    if len(json_data) > 0 :
+        # Ecriture du json avec les prédictions
+        json_path = os.path.join(args.output_dir, "..", "dino_predictions.json")
+        print("json path :", json_path)
+        out_file = open(json_path, "w")
+        json.dump(json_data, out_file, indent = 6)
+        out_file.close()
+     
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()
     print("Averaged stats:", metric_logger)
@@ -291,8 +322,6 @@ def evaluate(model, criterion, postprocessors, data_loader, base_ds, device, out
         stats['PQ_all'] = panoptic_res["All"]
         stats['PQ_th'] = panoptic_res["Things"]
         stats['PQ_st'] = panoptic_res["Stuff"]
-
-
 
     return stats, coco_evaluator
 
